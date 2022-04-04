@@ -1,0 +1,97 @@
+#!/bin/bash
+
+set -e
+
+_action=$1
+shift
+
+export CLUSTER_NAME=nargaman-mgmt
+export KUBECONFIG=dev-scripts/ocp/${CLUSTER_NAME}/auth/kubeconfig
+export NFS_PATH=/home/nfshare
+export NFS_PROVISIONER_NAME=nfs-storage
+export NFS_SERVER=192.168.122.1
+
+function devcluster::install-nfs-class() {
+	echo "Configure NFS server in the hosting server..."
+	dnf install nfs-utils -y
+	mkdir -p ${NFS_PATH}
+	chown -R nobody:nobody ${NFS_PATH}
+	chmod -R 777 ${NFS_PATH}
+	echo "${NFS_PATH}  192.168.111.0/24(rw,sync,no_root_squash,no_subtree_check,no_wdelay)" > /etc/exports
+	exportfs -rv
+
+	echo "Set firewall rules..."
+	firewall-cmd --zone=libvirt --add-service mountd --permanent
+	firewall-cmd --zone=libvirt --add-service rpc-bind --permanent
+	firewall-cmd --zone=libvirt --add-service nfs --permanent
+	firewall-cmd --reload
+
+	echo "Enable and start the NFS related services..."
+	systemctl enable nfs-server rpcbind
+	systemctl start nfs-server rpcbind nfs-mountd
+
+	echo "Deploy NFS provisioner in the cluster..."
+	echo "(1. Create \"nfs\" namespace)"
+	kubectl create namespace nfs
+	echo "(2. Apply Deployment)"
+	echo  manifests/nfs/namespace.yaml | envsubst | kubectl apply -f -
+	echo "(3. Apply RBAC)"
+	echo  manifests/nfs/rbac.yaml | envsubst | kubectl apply -f -
+	echo "(4. Apply StorageClass)"
+	echo  manifests/nfs/storageclass.yaml | envsubst | kubectl apply -f -
+
+	echo "Assign appropriate scc..."
+	oc create role use-scc-hostmount-anyuid --verb=use --resource=scc --resource-name=hostmount-anyuid -n nfs
+	oc adm policy add-role-to-user use-scc-hostmount-anyuid -z nfs-client-provisioner --role-namespace nfs -n nfs
+	oc scale deploy nfs-client-provisioner -n nfs --replicas 0
+	oc scale deploy nfs-client-provisioner -n nfs --replicas 1
+
+}
+
+function devcluster::install-metallb() {
+	echo "Create \"metallb-system\" namespace..."
+	kubectl create namespace metallb-system
+
+	echo "Create MetalLB Objects..."
+	echo  manifests/metallb/objects.yaml | envsubst | kubectl apply -f -
+
+	echo "Create the MetalLB secret memberlist..."
+	kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+
+	echo "Define and deploy Layer2 configuration..."
+	echo  manifests/metallb/config.yaml | envsubst | kubectl apply -f -
+
+	echo "Assign appropriate scc..."
+	oc adm policy add-scc-to-user privileged -n metallb-system -z speaker
+	oc adm policy add-scc-to-user privileged -n metallb-system -z controller
+}
+
+function devcluster::install-cnv() {
+	echo "Subscribing to the OpenShift Virtualization catalog..."
+	echo  manifests/cnv/cnv.yaml | envsubst | kubectl apply -f -
+
+	echo "Sleep 60 seconds..."
+	sleep 60
+
+	echo "Deploying the OpenShift Virtualization Operator..."
+	echo  manifests/cnv/hco.yaml | envsubst | kubectl apply -f -
+}
+
+function devcluster::create-namespace() {
+	curl  https://gist.githubusercontent.com/nirarg/2e6a82c3e33c23e43f5d3d6a00d714a8/raw/cfffe6522fa0112a788f3ce3ab45f448898d2666/namespace.yaml | envsubst | kubectl apply -f -
+}
+
+case ${_action} in
+"install-nfs-class")
+        devcluster::install-nfs-class
+        ;;
+"install-metallb")
+        devcluster::install-metallb
+        ;;
+"install-cnv")
+        devcluster::install-cnv
+        ;;
+"create-namespace")
+        devcluster::create-namespace
+        ;;
+esac
