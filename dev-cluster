@@ -5,11 +5,72 @@ set -e
 _action=$1
 shift
 
-export CLUSTER_NAME=nargaman-mgmt
+export CLUSTER_NAME=${CLUSTER_NAME:-my-cluster}
+export BASE_DOMAIN=${BASE_DOMAIN:-example.com}
+export WORKER_MEMORY=${WORKER_MEMORY:-32768}
+export WORKER_VCPU=${WORKER_VCPU:-16}
+export IP_STACK=${IP_STACK:-v4}
+export NUM_WORKERS=${NUM_WORKERS:-3}
+export WORKING_DIR=${WORKING_DIR:-/home/dev-scripts}
+
 export KUBECONFIG=dev-scripts/ocp/${CLUSTER_NAME}/auth/kubeconfig
+
 export NFS_PATH=/home/nfshare
 export NFS_PROVISIONER_NAME=nfs-storage
 export NFS_SERVER=192.168.122.1
+
+function devcluster::usage() {
+	echo "Usage:
+	
+	./dev-cluster <cammand>
+			
+		create-cluster     ==> Create new OCP cluster
+		install-nfs-class  ==> Install NFS Storage Class on the cluster
+		install-metallb    ==> Install MetalLB (LoadBalancer) on the cluster
+		install-cnv        ==> Install CNV (Openshift Virtualization) on the cluster
+
+		all                ==> Create New OCP cluster and install NFS StorageClass, MetalLB and CNV on it
+		clean              ==> Delete the OCP cluster
+		help               ==> Print usage
+	"
+}
+
+function devcluster::clean() {
+	if [ -d "dev-scripts" ] 
+	then
+		cd dev-scripts
+		make clean
+		cd ..
+		rm -rf dev-scripts
+	fi
+	if [ -d "${WORKING_DIR}" ] 
+	then
+		rm -rf ${WORKING_DIR}
+	fi
+}
+
+function devcluster::create-cluster() {
+	if [[ "${PULL_SECRET_PATH}" == "" ]]; then
+        	echo "!!!Must set the Environment variables \"PULL_SECRET_PATH\"!!!"
+		echo " Download it from https://console.redhat.com/openshift/install/pull-secret"
+		echo "Run 'export PULL_SECRET_PATH=...'"
+        	exit 1
+	fi
+	if [[ "${CI_TOKEN}" == "" ]]; then
+        	echo "!!!Must set the Environment variables \"CI_TOKEN\"!!!"
+		echo "Go to https://console-openshift-console.apps.ci.l2s4.p1.openshiftapps.com/, click on your name in the top right, copy the login command, extract the token from the command and use it to set CI_TOKEN variable"
+		echo "Run 'export CI_TOKEN=...'"
+        	exit 1
+	fi
+	git clone https://github.com/openshift-metal3/dev-scripts
+	cp ${PULL_SECRET_PATH} dev-scripts/pull_secret.json
+	cd dev-scripts
+	cp config_example.sh config_${USER}.sh
+	sed -i 's/export CI_TOKEN=''/export CI_TOKEN='${CI_TOKEN}'/g' config_${USER}.sh
+	make
+	cd ..
+
+}
 
 function devcluster::install-nfs-class() {
 	echo "Configure NFS server in the hosting server..."
@@ -32,13 +93,13 @@ function devcluster::install-nfs-class() {
 
 	echo "Deploy NFS provisioner in the cluster..."
 	echo "(1. Create \"nfs\" namespace)"
-	kubectl create namespace nfs
+	cat  manifests/nfs/namespace.yaml | kubectl apply -f -
 	echo "(2. Apply Deployment)"
-	echo  manifests/nfs/namespace.yaml | envsubst | kubectl apply -f -
+	cat  manifests/nfs/deployments.yaml | envsubst | kubectl apply -f -
 	echo "(3. Apply RBAC)"
-	echo  manifests/nfs/rbac.yaml | envsubst | kubectl apply -f -
+	cat  manifests/nfs/rbac.yaml | kubectl apply -f -
 	echo "(4. Apply StorageClass)"
-	echo  manifests/nfs/storageclass.yaml | envsubst | kubectl apply -f -
+	cat  manifests/nfs/storageclass.yaml | envsubst | kubectl apply -f -
 
 	echo "Assign appropriate scc..."
 	oc create role use-scc-hostmount-anyuid --verb=use --resource=scc --resource-name=hostmount-anyuid -n nfs
@@ -50,16 +111,16 @@ function devcluster::install-nfs-class() {
 
 function devcluster::install-metallb() {
 	echo "Create \"metallb-system\" namespace..."
-	kubectl create namespace metallb-system
+	cat  manifests/metallb/namespace.yaml | kubectl apply -f -
 
 	echo "Create MetalLB Objects..."
-	echo  manifests/metallb/objects.yaml | envsubst | kubectl apply -f -
+	cat  manifests/metallb/objects.yaml | kubectl apply -f -
 
 	echo "Create the MetalLB secret memberlist..."
 	kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
 
 	echo "Define and deploy Layer2 configuration..."
-	echo  manifests/metallb/config.yaml | envsubst | kubectl apply -f -
+	cat  manifests/metallb/config.yaml | kubectl apply -f -
 
 	echo "Assign appropriate scc..."
 	oc adm policy add-scc-to-user privileged -n metallb-system -z speaker
@@ -68,20 +129,22 @@ function devcluster::install-metallb() {
 
 function devcluster::install-cnv() {
 	echo "Subscribing to the OpenShift Virtualization catalog..."
-	echo  manifests/cnv/cnv.yaml | envsubst | kubectl apply -f -
+	cat  manifests/cnv/cnv.yaml | kubectl apply -f -
 
 	echo "Sleep 60 seconds..."
 	sleep 60
 
 	echo "Deploying the OpenShift Virtualization Operator..."
-	echo  manifests/cnv/hco.yaml | envsubst | kubectl apply -f -
-}
-
-function devcluster::create-namespace() {
-	curl  https://gist.githubusercontent.com/nirarg/2e6a82c3e33c23e43f5d3d6a00d714a8/raw/cfffe6522fa0112a788f3ce3ab45f448898d2666/namespace.yaml | envsubst | kubectl apply -f -
+	cat  manifests/cnv/hco.yaml | kubectl apply -f -
 }
 
 case ${_action} in
+"clean")
+        devcluster::clean
+        ;;
+"create-cluster")
+        devcluster::create-cluster
+        ;;
 "install-nfs-class")
         devcluster::install-nfs-class
         ;;
@@ -91,7 +154,21 @@ case ${_action} in
 "install-cnv")
         devcluster::install-cnv
         ;;
-"create-namespace")
-        devcluster::create-namespace
+"all")
+        devcluster::clean
+        devcluster::create-cluster
+        devcluster::install-nfs-class
+        devcluster::install-metallb
+        devcluster::install-cnv
+        ;;
+"help")
+        devcluster::usage
+        ;;
+*)
+	echo "Error:
+	Unsupported command!!!
+	"
+        devcluster::usage
+	exit 1
         ;;
 esac
