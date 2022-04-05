@@ -5,8 +5,8 @@ set -e
 _action=$1
 shift
 
-export CLUSTER_NAME=${CLUSTER_NAME:-my-cluster}
-export BASE_DOMAIN=${BASE_DOMAIN:-example.com}
+export CLUSTER_NAME=${CLUSTER_NAME:-nargaman-mgmt}
+export BASE_DOMAIN=${BASE_DOMAIN:-helios2.example.com}
 export WORKER_MEMORY=${WORKER_MEMORY:-32768}
 export WORKER_VCPU=${WORKER_VCPU:-16}
 export IP_STACK=${IP_STACK:-v4}
