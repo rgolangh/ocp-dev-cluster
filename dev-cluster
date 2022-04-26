@@ -18,6 +18,8 @@ export NFS_PATH=/home/nfshare
 export NFS_PROVISIONER_NAME=nfs-storage
 export NFS_SERVER=192.168.122.1
 
+export CONFIG="config_${USER}.sh"
+
 function devcluster::usage() {
 	echo "Usage:
 	
