@@ -67,6 +67,7 @@ function devcluster::create-cluster() {
 	cd dev-scripts
 	cp config_example.sh config_${USER}.sh
 	sed -i 's/export CI_TOKEN=''/export CI_TOKEN='${CI_TOKEN}'/g' config_${USER}.sh
+	export CONFIG="config_${USER}.sh"
 	make
 	cd ..
 
