@@ -65,9 +65,8 @@ function devcluster::create-cluster() {
 	git clone https://github.com/openshift-metal3/dev-scripts
 	cp ${PULL_SECRET_PATH} dev-scripts/pull_secret.json
 	cd dev-scripts
-	cp config_example.sh config_${USER}.sh
 	sed -i 's/export CI_TOKEN=''/export CI_TOKEN='${CI_TOKEN}'/g' config_${USER}.sh
-	make CONFIG="$(pwd)/config_${USER}.sh"
+	make CONFIG=config_example.sh
 	cd ..
 
 }
