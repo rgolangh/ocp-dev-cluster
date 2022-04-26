@@ -40,7 +40,7 @@ function devcluster::clean() {
 	if [ -d "dev-scripts" ] 
 	then
 		cd dev-scripts
-		sed 's/export CI_TOKEN=''/export CI_TOKEN='${CI_TOKEN}'/g' config_example.sh > $CONFIG	
+		sed 's/export CI_TOKEN=.*/export CI_TOKEN='${CI_TOKEN}'/g' config_example.sh > $CONFIG	
 		make clean
 		cd ..
 		rm -rf dev-scripts
@@ -64,7 +64,7 @@ function devcluster::create-cluster() {
 	git clone https://github.com/openshift-metal3/dev-scripts
 	cd dev-scripts
 	cp ${PULL_SECRET_PATH} pull_secret.json
-	sed 's/export CI_TOKEN=''/export CI_TOKEN='${CI_TOKEN}'/g' config_example.sh > $CONFIG
+	sed 's/export CI_TOKEN=.*/export CI_TOKEN='${CI_TOKEN}'/g' config_example.sh > $CONFIG
 	make
 	cd ..
 
