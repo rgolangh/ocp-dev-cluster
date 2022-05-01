@@ -36,6 +36,12 @@ function devcluster::usage() {
 	"
 }
 
+function _unpack_manifests() {
+	if [[ ! -d manifests ]]; then
+		curl -L https://api.github.com/repos/rgolangh/ocp-dev-cluster/tarball | tar xz --strip=1
+	fi
+}
+
 function devcluster::clean() {
 	if [ -d "dev-scripts" ] 
 	then
@@ -135,6 +141,8 @@ function devcluster::install-cnv() {
 	echo "Deploying the OpenShift Virtualization Operator..."
 	cat  manifests/cnv/hco.yaml | kubectl apply -f -
 }
+
+_unpack_manifests
 
 case ${_action} in
 "clean")
