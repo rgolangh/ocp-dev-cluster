@@ -12,7 +12,7 @@ export WORKER_VCPU=${WORKER_VCPU:-16}
 export IP_STACK=${IP_STACK:-v4}
 export NUM_WORKERS=${NUM_WORKERS:-3}
 
-export KUBECONFIG=dev-scripts/ocp/${CLUSTER_NAME}/auth/kubeconfig
+export KUBECONFIG="{KUBECONFIG:-dev-scripts/ocp/${CLUSTER_NAME}/auth/kubeconfig}"
 
 export NFS_PATH=/home/nfshare
 export NFS_PROVISIONER_NAME=nfs-storage
